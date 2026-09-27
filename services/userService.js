@@ -1,6 +1,9 @@
+import fs from 'fs';
+import path from 'path';
 import { User } from '../models/User.js';
 import { toCents, toAmount } from '../utils/money.js';
 import { comparePassword, hashPassword } from '../utils/crypto.js';
+import { avatarsDir } from '../middleware/upload.js';
 
 export const formatUserResponse = (user) => {
   const obj = user.toObject ? user.toObject() : { ...user };
@@ -13,6 +16,19 @@ export const formatUserResponse = (user) => {
   if (obj.monthlySavingsGoal !== undefined) obj.monthlySavingsGoal = toAmount(obj.monthlySavingsGoal);
   
   return obj;
+};
+
+const deleteLocalAvatar = (avatarPath) => {
+  if (!avatarPath || !avatarPath.startsWith('/uploads/avatars/')) return;
+  const filename = path.basename(avatarPath);
+  const fullPath = path.join(avatarsDir, filename);
+  if (fs.existsSync(fullPath)) {
+    try {
+      fs.unlinkSync(fullPath);
+    } catch (err) {
+      console.error('Failed to delete old avatar', err);
+    }
+  }
 };
 
 /**
@@ -51,6 +67,38 @@ export const updateUserProfile = async (userId, updateData) => {
     user.monthlySavingsGoal = toCents(updateData.monthlySavingsGoal);
   }
 
+  await user.save();
+  return formatUserResponse(user);
+};
+
+export const updateUserAvatar = async (userId, filename) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error('User profile not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const previous = user.avatar;
+  user.avatar = `/uploads/avatars/${filename}`;
+  await user.save();
+  deleteLocalAvatar(previous);
+  return formatUserResponse(user);
+};
+
+export const setTwoFactorEnabled = async (userId, enabled) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    const error = new Error('User profile not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  user.twoFactorEnabled = Boolean(enabled);
+  if (!user.twoFactorEnabled) {
+    user.loginOtpCode = undefined;
+    user.loginOtpExpires = undefined;
+  }
   await user.save();
   return formatUserResponse(user);
 };

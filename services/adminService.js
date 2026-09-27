@@ -4,19 +4,77 @@ import { Transaction } from '../models/Transaction.js';
 import { Category } from '../models/Category.js';
 import Announcement from '../models/Announcement.js';
 import { TipTemplate } from '../models/TipTemplate.js';
+import { ActivityLog } from '../models/ActivityLog.js';
 import { toAmount } from '../utils/money.js';
+
+/** Last 4 rolling weeks of distinct users with tx or activity (real, not fabricated). */
+const getWeeklyActiveUsers = async () => {
+  const weeks = [];
+  const now = new Date();
+
+  for (let i = 3; i >= 0; i--) {
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    end.setDate(end.getDate() - i * 7);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+
+    const [txUsers, activityUsers] = await Promise.all([
+      Transaction.distinct('user', {
+        deletedAt: null,
+        createdAt: { $gte: start, $lte: end }
+      }),
+      ActivityLog.distinct('user', {
+        at: { $gte: start, $lte: end }
+      })
+    ]);
+
+    const unique = new Set([
+      ...txUsers.map((id) => id.toString()),
+      ...activityUsers.map((id) => id.toString())
+    ]);
+
+    weeks.push({
+      week: `W${4 - i}`,
+      users: unique.size,
+      from: start.toISOString().slice(0, 10),
+      to: end.toISOString().slice(0, 10)
+    });
+  }
+
+  return weeks;
+};
 
 // ─── Platform Stats ───────────────────────────────────────────────────────────
 export const getSystemStats = async () => {
-  const activeUsers = await User.countDocuments({ role: 'student', isActive: true });
-
-  // Total non-deleted transaction count
-  const totalTransactions = await Transaction.countDocuments({ deletedAt: null });
-
-  // Aggregate total income/expense volume — NO access to individual transactions
-  const volumeResult = await Transaction.aggregate([
-    { $match: { deletedAt: null } },
-    { $group: { _id: '$type', totalVolume: { $sum: '$amount' } } },
+  const [
+    activeUsers,
+    totalTransactions,
+    defaultCategories,
+    activeAnnouncements,
+    volumeResult,
+    topCategories,
+    weeklyActiveUsers
+  ] = await Promise.all([
+    User.countDocuments({ role: 'student', isActive: true }),
+    Transaction.countDocuments({ deletedAt: null }),
+    Category.countDocuments({ isDefault: true }),
+    Announcement.countDocuments({ isActive: true }),
+    Transaction.aggregate([
+      { $match: { deletedAt: null } },
+      { $group: { _id: '$type', totalVolume: { $sum: '$amount' } } },
+    ]),
+    Transaction.aggregate([
+      { $match: { deletedAt: null } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+      { $lookup: { from: 'categories', localField: '_id', foreignField: '_id', as: 'categoryInfo' } },
+      { $unwind: '$categoryInfo' },
+      { $project: { _id: 1, name: '$categoryInfo.name', count: 1 } },
+    ]),
+    getWeeklyActiveUsers()
   ]);
 
   let totalIncomeCents = 0;
@@ -26,24 +84,17 @@ export const getSystemStats = async () => {
     if (item._id === 'expense') totalExpenseCents = item.totalVolume;
   });
 
-  const topCategories = await Transaction.aggregate([
-    { $match: { deletedAt: null } },
-    { $group: { _id: '$category', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 5 },
-    { $lookup: { from: 'categories', localField: '_id', foreignField: '_id', as: 'categoryInfo' } },
-    { $unwind: '$categoryInfo' },
-    { $project: { _id: 1, name: '$categoryInfo.name', count: 1 } },
-  ]);
-
   return {
     activeUsers,
     totalTransactions,
+    defaultCategories,
+    activeAnnouncements,
     totalVolume: {
       income: toAmount(totalIncomeCents),
       expense: toAmount(totalExpenseCents)
     },
-    topCategories
+    topCategories,
+    weeklyActiveUsers
   };
 };
 

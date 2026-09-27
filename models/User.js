@@ -53,9 +53,26 @@ const userSchema = new mongoose.Schema(
       enum: Object.values(CURRENCIES),
       default: CURRENCIES.PKR
     },
+    avatar: {
+      type: String,
+      default: null,
+      trim: true
+    },
     isActive: {
       type: Boolean,
       default: true
+    },
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false
+    },
+    loginOtpCode: {
+      type: String,
+      select: false
+    },
+    loginOtpExpires: {
+      type: Date,
+      select: false
     },
     resetOtpCode: {
       type: String,

@@ -8,6 +8,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import { connectDB } from './config/db.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { apiLimiter, authLimiter, chatLimiter } from './middleware/rateLimiter.js';
+import { uploadsRoot } from './middleware/upload.js';
 
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -44,7 +45,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Security & Utility Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' }
+  })
+);
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -60,6 +65,7 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
+app.use('/uploads', express.static(uploadsRoot));
 
 // Sanitize inputs against NoSQL injection
 app.use(mongoSanitize());

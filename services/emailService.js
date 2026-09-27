@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { User } from '../models/User.js';
-import { getDashboardSummary } from './dashboardService.js';
+import { getPeriodOverview } from './reportService.js';
 import { formatMoney } from '../utils/currency.js';
 
 /**
@@ -32,9 +32,10 @@ const createTransporter = () => {
 };
 
 /**
- * Share Monthly Financial Report via Email.
+ * Share Financial Report via Email.
+ * Honors filters: month, dateFrom, dateTo, category, type.
  */
-export const shareReportViaEmail = async (userId, targetEmail = null, monthStr = null) => {
+export const shareReportViaEmail = async (userId, targetEmail = null, filters = {}) => {
   const user = await User.findById(userId);
   if (!user) {
     const error = new Error('User not found');
@@ -43,7 +44,7 @@ export const shareReportViaEmail = async (userId, targetEmail = null, monthStr =
   }
 
   const recipient = targetEmail || user.email;
-  const summary = await getDashboardSummary(userId);
+  const summary = await getPeriodOverview(userId, filters || {});
 
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden;">
@@ -53,7 +54,7 @@ export const shareReportViaEmail = async (userId, targetEmail = null, monthStr =
       </div>
       <div style="padding: 20px; color: #1F2937;">
         <p>Hi <strong>${user.name}</strong>,</p>
-        <p>Here is your financial summary report for <strong>${summary.month}</strong>:</p>
+        <p>Here is your financial summary report for <strong>${summary.periodLabel}</strong>:</p>
         
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
           <tr style="background-color: #F3F4F6;">
@@ -101,7 +102,7 @@ export const shareReportViaEmail = async (userId, targetEmail = null, monthStr =
   const info = await transporter.sendMail({
     from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@campuscoin.edu',
     to: recipient,
-    subject: `Campus Coin - Financial Summary (${summary.month})`,
+    subject: `Campus Coin - Financial Summary (${summary.periodLabel})`,
     html: htmlContent
   });
 
@@ -163,6 +164,56 @@ export const sendResetPasswordEmail = async (email, name, otpCode) => {
   return info;
 };
 
+
+/**
+ * Send Login 2FA OTP Email.
+ */
+export const sendLogin2FAOtpEmail = async (email, name, otpCode) => {
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; background-color: #FFFFFF;">
+      <div style="background-color: #0B3D2E; padding: 24px; text-align: center; color: #FFFFFF;">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 800;">Campus Coin</h1>
+        <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.9;">Two-Factor Authentication</p>
+      </div>
+      <div style="padding: 28px; color: #1F2937;">
+        <p style="font-size: 16px;">Hi <strong>${name}</strong>,</p>
+        <p style="font-size: 14px; color: #4B5563;">We detected a login attempt on your Campus Coin account. Use this One-Time Password (OTP) to finish signing in:</p>
+        
+        <div style="margin: 28px 0; text-align: center;">
+          <div style="display: inline-block; background-color: #ECFDF5; border: 2px dashed #0B3D2E; border-radius: 12px; padding: 16px 36px;">
+            <span style="font-size: 32px; font-weight: 800; color: #0B3D2E; letter-spacing: 6px;">${otpCode}</span>
+          </div>
+          <p style="font-size: 12px; color: #6B7280; margin-top: 10px;">This OTP will expire in <strong>10 minutes</strong>.</p>
+        </div>
+
+        <p style="font-size: 13px; color: #6B7280;">If you did not try to log in, secure your account and change your password immediately.</p>
+        
+        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 24px 0;" />
+        
+        <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin: 0;">
+          © ${new Date().getFullYear()} Campus Coin. All rights reserved.
+        </p>
+      </div>
+    </div>
+  `;
+
+  if (!process.env.SMTP_USER) {
+    console.log(`[Email Service Dev Mode] Simulating sending login 2FA OTP email to: ${email}`);
+    console.log(`[Email Service Dev Mode] Login 2FA OTP Code: ${otpCode}`);
+    return { simulated: true, otpCode };
+  }
+
+  const transporter = createTransporter();
+  const info = await transporter.sendMail({
+    from: process.env.FROM_EMAIL || process.env.SMTP_USER || 'noreply@campuscoin.edu',
+    to: email,
+    subject: `Campus Coin - ${otpCode} is your Login Verification Code`,
+    html: htmlContent
+  });
+
+  console.log(`[Email Service] Sent login 2FA OTP email to ${email}. MessageId: ${info.messageId}`);
+  return info;
+};
 
 /**
  * Send OTP for Registration Email Verification.

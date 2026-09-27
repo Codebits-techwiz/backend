@@ -4,25 +4,45 @@ import { toAmount } from '../utils/money.js';
 
 const userObjId = (id) => new mongoose.Types.ObjectId(id);
 
+/** Convert YYYY-MM into inclusive dateFrom / dateTo (UTC day bounds). */
+const resolveDateRange = (filters = {}) => {
+  let dateFrom = filters.dateFrom;
+  let dateTo = filters.dateTo;
+
+  if (filters.month && /^\d{4}-\d{2}$/.test(filters.month)) {
+    const [y, m] = filters.month.split('-').map(Number);
+    dateFrom = dateFrom || new Date(Date.UTC(y, m - 1, 1)).toISOString();
+    dateTo = dateTo || new Date(Date.UTC(y, m, 0, 23, 59, 59, 999)).toISOString();
+  }
+
+  return { dateFrom, dateTo };
+};
+
 /**
  * Category-wise spending breakdown report.
- * Supports filters: dateFrom, dateTo, category, type.
+ * Supports filters: month, dateFrom, dateTo, category, type (income|expense|all).
  */
 export const getCategoryBreakdown = async (userId, filters = {}) => {
   const matchFilter = {
     user: userObjId(userId),
-    deletedAt: null,
-    type: filters.type || 'expense'
+    deletedAt: null
   };
+
+  if (filters.type && filters.type !== 'all') {
+    matchFilter.type = filters.type;
+  } else if (!filters.type) {
+    matchFilter.type = 'expense';
+  }
 
   if (filters.category) {
     matchFilter.category = userObjId(filters.category);
   }
 
-  if (filters.dateFrom || filters.dateTo) {
+  const { dateFrom, dateTo } = resolveDateRange(filters);
+  if (dateFrom || dateTo) {
     matchFilter.date = {};
-    if (filters.dateFrom) matchFilter.date.$gte = new Date(filters.dateFrom);
-    if (filters.dateTo) matchFilter.date.$lte = new Date(filters.dateTo);
+    if (dateFrom) matchFilter.date.$gte = new Date(dateFrom);
+    if (dateTo) matchFilter.date.$lte = new Date(dateTo);
   }
 
   const breakdown = await Transaction.aggregate([
@@ -117,6 +137,7 @@ export const getTrend6Months = async (userId) => {
 
 /**
  * Daily and Weekly spending summaries for current month or date range.
+ * Supports filters: month, dateFrom, dateTo, category, type (income|expense|all).
  */
 export const getDailyWeeklySummaries = async (userId, filters = {}) => {
   const matchFilter = {
@@ -124,10 +145,19 @@ export const getDailyWeeklySummaries = async (userId, filters = {}) => {
     deletedAt: null
   };
 
-  if (filters.dateFrom || filters.dateTo) {
+  if (filters.type && filters.type !== 'all') {
+    matchFilter.type = filters.type;
+  }
+
+  if (filters.category) {
+    matchFilter.category = userObjId(filters.category);
+  }
+
+  const { dateFrom, dateTo } = resolveDateRange(filters);
+  if (dateFrom || dateTo) {
     matchFilter.date = {};
-    if (filters.dateFrom) matchFilter.date.$gte = new Date(filters.dateFrom);
-    if (filters.dateTo) matchFilter.date.$lte = new Date(filters.dateTo);
+    if (dateFrom) matchFilter.date.$gte = new Date(dateFrom);
+    if (dateTo) matchFilter.date.$lte = new Date(dateTo);
   } else {
     // Default to current month
     const now = new Date();
@@ -188,4 +218,72 @@ export const getDailyWeeklySummaries = async (userId, filters = {}) => {
   });
 
   return { daily, weekly };
+};
+
+/**
+ * Period income / expense / balance / top category for PDF + email share.
+ * Honors month, dateFrom, dateTo, category (type filter does not hide the other side).
+ */
+export const getPeriodOverview = async (userId, filters = {}) => {
+  const matchFilter = {
+    user: userObjId(userId),
+    deletedAt: null
+  };
+
+  if (filters.category) {
+    matchFilter.category = userObjId(filters.category);
+  }
+
+  let { dateFrom, dateTo } = resolveDateRange(filters);
+  if (!dateFrom && !dateTo && !filters.month) {
+    const currentMonthStr = new Date().toISOString().slice(0, 7);
+    ({ dateFrom, dateTo } = resolveDateRange({ month: currentMonthStr }));
+  }
+
+  if (dateFrom || dateTo) {
+    matchFilter.date = {};
+    if (dateFrom) matchFilter.date.$gte = new Date(dateFrom);
+    if (dateTo) matchFilter.date.$lte = new Date(dateTo);
+  }
+
+  const totalsAgg = await Transaction.aggregate([
+    { $match: matchFilter },
+    { $group: { _id: '$type', totalCents: { $sum: '$amount' } } }
+  ]);
+
+  let incomeCents = 0;
+  let expenseCents = 0;
+  totalsAgg.forEach((item) => {
+    if (item._id === 'income') incomeCents = item.totalCents;
+    if (item._id === 'expense') expenseCents = item.totalCents;
+  });
+
+  const topCategoryAgg = await Transaction.aggregate([
+    { $match: { ...matchFilter, type: 'expense' } },
+    { $group: { _id: '$category', totalCents: { $sum: '$amount' } } },
+    { $sort: { totalCents: -1 } },
+    { $limit: 1 },
+    { $lookup: { from: 'categories', localField: '_id', foreignField: '_id', as: 'category' } },
+    { $unwind: '$category' }
+  ]);
+
+  const periodLabel = filters.dateFrom || filters.dateTo
+    ? `${filters.dateFrom || '…'} → ${filters.dateTo || '…'}`
+    : (filters.month || new Date().toISOString().slice(0, 7));
+
+  return {
+    month: periodLabel,
+    periodLabel,
+    totals: {
+      income: toAmount(incomeCents),
+      expense: toAmount(expenseCents),
+      balance: toAmount(incomeCents - expenseCents)
+    },
+    topCategory: topCategoryAgg.length
+      ? {
+          name: topCategoryAgg[0].category.name,
+          amount: toAmount(topCategoryAgg[0].totalCents)
+        }
+      : null
+  };
 };

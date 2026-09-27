@@ -32,7 +32,7 @@ export const getDailyWeekly = async (req, res, next) => {
 
 export const exportPdf = async (req, res, next) => {
   try {
-    await pdfService.generateReportPdfStream(req.user.id, res);
+    await pdfService.generateReportPdfStream(req.user.id, res, req.query);
   } catch (error) {
     next(error);
   }
@@ -40,7 +40,14 @@ export const exportPdf = async (req, res, next) => {
 
 export const shareEmail = async (req, res, next) => {
   try {
-    const result = await emailService.shareReportViaEmail(req.user.id, req.body.recipientEmail, req.body.month);
+    const { recipientEmail, month, dateFrom, dateTo, category, type } = req.body;
+    const result = await emailService.shareReportViaEmail(req.user.id, recipientEmail, {
+      month,
+      dateFrom,
+      dateTo,
+      category,
+      type
+    });
     return sendSuccess(res, result.message, result);
   } catch (error) {
     next(error);

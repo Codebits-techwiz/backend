@@ -5,3 +5,12 @@ export const forgotPasswordSchema = z.object({ email: z.string().email() });
 export const resetPasswordSchema = z.object({ email: z.string().email(), otp: z.string().length(6), newPassword: z.string().min(6) });
 export const verifyOtpSchema = z.object({ email: z.string().email(), otp: z.string().length(6) });
 export const resendOtpSchema = z.object({ email: z.string().email() });
+export const verifyLoginOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6),
+  pendingToken: z.string().min(1)
+});
+export const resendLoginOtpSchema = z.object({
+  email: z.string().email(),
+  pendingToken: z.string().min(1)
+});

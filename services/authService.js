@@ -3,10 +3,36 @@ import { PendingUser } from '../models/PendingUser.js';
 import { hashPassword, comparePassword } from '../utils/crypto.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { sendResetPasswordEmail, sendRegistrationOtpEmail } from './emailService.js';
+import { sendResetPasswordEmail, sendRegistrationOtpEmail, sendLogin2FAOtpEmail } from './emailService.js';
 import { formatUserResponse } from './userService.js';
 
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+const generatePending2FAToken = (userId, email) =>
+  jwt.sign(
+    { id: userId, email, purpose: '2fa_pending' },
+    process.env.JWT_SECRET || 'secret',
+    { expiresIn: '15m' }
+  );
+
+const verifyPending2FAToken = (pendingToken, email) => {
+  try {
+    const decoded = jwt.verify(pendingToken, process.env.JWT_SECRET || 'secret');
+    if (decoded.purpose !== '2fa_pending') throw new Error('Invalid verification session');
+    if (decoded.email !== email.toLowerCase().trim()) throw new Error('Invalid verification session');
+    return decoded;
+  } catch {
+    throw new Error('Verification session expired. Please log in again.');
+  }
+};
+
+const issueLoginOtp = async (user) => {
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  user.loginOtpCode = otpCode;
+  user.loginOtpExpires = Date.now() + 10 * 60 * 1000;
+  await user.save();
+  await sendLogin2FAOtpEmail(user.email, user.name, otpCode);
+  return generatePending2FAToken(user._id, user.email);
+};
 
 export const registerUser = async (data) => {
   const normalizedEmail = data.email.toLowerCase().trim();
@@ -87,12 +113,59 @@ export const resendRegistrationOtp = async (email) => {
 
 
 export const loginUser = async (email, password) => {
-  const user = await User.findOne({ email }).select('+passwordHash');
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
   if (!user || !(await comparePassword(password, user.passwordHash))) throw new Error('Invalid email or password');
   if (user.role === 'admin') throw new Error('Invalid email or password'); // Reject admin accounts
   if (!user.isActive) throw new Error('Invalid email or password'); // Generic — don't reveal disabled state
+
+  if (user.twoFactorEnabled) {
+    const pendingToken = await issueLoginOtp(user);
+    return {
+      requires2FA: true,
+      email: user.email,
+      pendingToken
+    };
+  }
+
+  const token = generateToken(user._id);
+  return { requires2FA: false, user: formatUserResponse(user), token };
+};
+
+export const verifyLoginOtp = async (email, otp, pendingToken) => {
+  const normalizedEmail = email.toLowerCase().trim();
+  const decoded = verifyPending2FAToken(pendingToken, normalizedEmail);
+
+  const user = await User.findOne({
+    _id: decoded.id,
+    email: normalizedEmail,
+    loginOtpExpires: { $gt: Date.now() }
+  }).select('+loginOtpCode');
+
+  if (!user || !user.twoFactorEnabled || user.loginOtpCode !== otp.trim()) {
+    throw new Error('Invalid or expired OTP code');
+  }
+  if (!user.isActive) throw new Error('Invalid or expired OTP code');
+
+  user.loginOtpCode = undefined;
+  user.loginOtpExpires = undefined;
+  await user.save();
+
   const token = generateToken(user._id);
   return { user: formatUserResponse(user), token };
+};
+
+export const resendLoginOtp = async (email, pendingToken) => {
+  const normalizedEmail = email.toLowerCase().trim();
+  const decoded = verifyPending2FAToken(pendingToken, normalizedEmail);
+
+  const user = await User.findById(decoded.id);
+  if (!user || !user.twoFactorEnabled || !user.isActive) {
+    throw new Error('Unable to resend OTP. Please log in again.');
+  }
+
+  const newPendingToken = await issueLoginOtp(user);
+  return { email: user.email, pendingToken: newPendingToken };
 };
 
 export const adminLoginUser = async (email, password) => {

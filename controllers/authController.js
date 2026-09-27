@@ -40,11 +40,41 @@ export const resendOtp = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { user, token } = await authService.loginUser(req.body.email, req.body.password);
+    const result = await authService.loginUser(req.body.email, req.body.password);
+    if (result.requires2FA) {
+      return sendSuccess(res, 'Verification code sent to your email', {
+        requires2FA: true,
+        email: result.email,
+        pendingToken: result.pendingToken
+      });
+    }
+    res.cookie('jwt', result.token, cookieOptions());
+    sendSuccess(res, 'Logged in successfully', result.user);
+  } catch (err) {
+    sendError(res, 401, err.message);
+  }
+};
+
+export const verifyLoginOtp = async (req, res) => {
+  try {
+    const { user, token } = await authService.verifyLoginOtp(
+      req.body.email,
+      req.body.otp,
+      req.body.pendingToken
+    );
     res.cookie('jwt', token, cookieOptions());
     sendSuccess(res, 'Logged in successfully', user);
   } catch (err) {
     sendError(res, 401, err.message);
+  }
+};
+
+export const resendLoginOtp = async (req, res) => {
+  try {
+    const result = await authService.resendLoginOtp(req.body.email, req.body.pendingToken);
+    sendSuccess(res, 'A new verification code has been sent to your email', result);
+  } catch (err) {
+    sendError(res, 400, err.message);
   }
 };
 
