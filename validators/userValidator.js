@@ -7,7 +7,7 @@ export const updateProfileSchema = z.object({
   academicYear: z.string().optional(),
   monthlyAllowanceBaseline: z.number().min(0, 'Allowance cannot be negative').optional(),
   monthlySavingsGoal: z.number().min(0, 'Savings goal cannot be negative').optional(),
-  currency: z.enum([CURRENCIES.USD, CURRENCIES.PKR, CURRENCIES.INR, CURRENCIES.EUR]).optional()
+  currency: z.enum([CURRENCIES.USD, CURRENCIES.PKR, CURRENCIES.GBP, CURRENCIES.EUR]).optional()
 });
 
 // Change Password Schema
