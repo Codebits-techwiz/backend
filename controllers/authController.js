@@ -89,7 +89,11 @@ export const adminLogin = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  res.clearCookie('jwt', { httpOnly: true, sameSite: 'strict' });
+  res.clearCookie('jwt', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
   sendSuccess(res, 'Logged out successfully');
 };
 

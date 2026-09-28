@@ -5,7 +5,7 @@ import { Transaction } from '../models/Transaction.js';
 import { Budget } from '../models/Budget.js';
 import { User } from '../models/User.js';
 import { TipTemplate } from '../models/TipTemplate.js';
-import { toAmount, toCents } from '../utils/money.js';
+import { toAmount, toCents, toYearMonthLocal, getLocalMonthBounds } from '../utils/money.js';
 import { formatMoney } from '../utils/currency.js';
 
 const userObjId = (id) => new mongoose.Types.ObjectId(id);
@@ -39,12 +39,12 @@ const resolveTemplate = async (ruleType, vars) => {
  * Business Rule #4:
  * - Tip if category spend > 120% of 3-month average
  * - Warning if budget >= 80%
- * - Savings goal at risk if total expense exceeds allowance baseline
+ * - Allowance at risk if total expense exceeds allowance baseline
  * - Rank tips by potential savings
  * - Hide tips that were dismissed by student
  */
 export const getSavingTipsForUser = async (userId) => {
-  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const currentMonthStr = toYearMonthLocal();
 
   // Fetch student tip actions (pinned / dismissed)
   const actions = await TipAction.find({ user: userId });
@@ -83,8 +83,7 @@ export const getSavingTipsForUser = async (userId) => {
  */
 const evaluateSavingRules = async (userId, monthStr) => {
   const user = await User.findById(userId);
-  const startOfMonth = new Date(`${monthStr}-01T00:00:00.000Z`);
-  const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+  const { startOfMonth, endOfMonth } = getLocalMonthBounds(monthStr);
 
   const tipsToEnsure = [];
 
@@ -165,7 +164,7 @@ const evaluateSavingRules = async (userId, monthStr) => {
     }
   }
 
-  // RULE 3: Savings Goal at Risk (Total expenses exceed monthly allowance baseline)
+  // RULE 3: Allowance at risk (total expenses exceed monthly allowance baseline)
   const totalExpenseCents = currentSpendAgg.reduce((acc, curr) => acc + curr.totalCents, 0);
   if (user && user.monthlyAllowanceBaseline > 0 && totalExpenseCents > user.monthlyAllowanceBaseline) {
     const deficitCents = totalExpenseCents - user.monthlyAllowanceBaseline;

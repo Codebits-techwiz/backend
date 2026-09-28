@@ -3,7 +3,7 @@ import { Budget } from '../models/Budget.js';
 import { Transaction } from '../models/Transaction.js';
 import { Category } from '../models/Category.js';
 import { Notification } from '../models/Notification.js';
-import { toCents, toAmount } from '../utils/money.js';
+import { toCents, toAmount, toYearMonthLocal, getLocalMonthBounds } from '../utils/money.js';
 import { User } from '../models/User.js';
 import { formatMoney } from '../utils/currency.js';
 
@@ -21,11 +21,8 @@ export const formatBudget = (budget, currentSpentCents = 0) => {
  * Month format: YYYY-MM (e.g. 2026-09)
  */
 export const getBudgetsForMonth = async (userId, monthStr) => {
-  const targetMonth = monthStr || new Date().toISOString().slice(0, 7); // Default current month YYYY-MM
-
-  // Parse start and end date for target month
-  const startOfMonth = new Date(`${targetMonth}-01T00:00:00.000Z`);
-  const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+  const targetMonth = monthStr || toYearMonthLocal(); // Default current month YYYY-MM
+  const { startOfMonth, endOfMonth } = getLocalMonthBounds(targetMonth);
 
   // Fetch budgets set for this month
   const budgets = await Budget.find({ user: userId, month: targetMonth }).populate('category', 'name type icon color');
@@ -104,15 +101,14 @@ export const deleteBudget = async (userId, budgetId) => {
  * "After saving an expense, compute month spend for that category. Create a notification at >=80% and again at >=100%, but never duplicate the same alert in the same month."
  */
 export const checkAndTriggerBudgetAlert = async (userId, categoryId, transactionDate = new Date()) => {
-  const monthStr = new Date(transactionDate).toISOString().slice(0, 7);
+  const monthStr = toYearMonthLocal(transactionDate);
+  const { startOfMonth, endOfMonth } = getLocalMonthBounds(monthStr);
 
   // Check if budget exists for this category & month
   const budget = await Budget.findOne({ user: userId, category: categoryId, month: monthStr }).populate('category', 'name');
   if (!budget) return; // No budget cap set for this category
 
   // Compute total spending for this category in the month
-  const startOfMonth = new Date(`${monthStr}-01T00:00:00.000Z`);
-  const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
 
   const spendResult = await Transaction.aggregate([
     {

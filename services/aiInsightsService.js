@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { Insight } from '../models/Insight.js';
 import { Transaction } from '../models/Transaction.js';
 import { User } from '../models/User.js';
-import { toAmount } from '../utils/money.js';
+import { toAmount, toYearMonthLocal } from '../utils/money.js';
 import { formatMoney } from '../utils/currency.js';
 
 const userObjId = (id) => new mongoose.Types.ObjectId(id);
@@ -18,7 +18,7 @@ const userObjId = (id) => new mongoose.Types.ObjectId(id);
  * 5. Always append disclaimer: "Suggestion, not certified financial advice".
  */
 export const getMonthlyInsights = async (userId, monthStr = null, force = false) => {
-  const targetMonth = monthStr || new Date().toISOString().slice(0, 7);
+  const targetMonth = monthStr || toYearMonthLocal();
 
   // Check cached insight in DB unless force is true
   if (!force) {

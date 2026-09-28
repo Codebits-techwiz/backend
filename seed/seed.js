@@ -20,6 +20,8 @@ import TransactionTemplate from '../models/TransactionTemplate.js';
 
 import { SiteContent } from '../models/SiteContent.js';
 import { DEFAULT_SITE_CONTENT } from '../services/siteContentService.js';
+import { DEFAULT_CATEGORIES } from '../config/defaultCategories.js';
+import { toYearMonthLocal } from '../utils/money.js';
 
 dotenv.config();
 
@@ -84,7 +86,7 @@ const seedDatabase = async () => {
         email: 'student@campuscoin.com',
         passwordHash,
         role: 'student',
-        academicYear: 'Sophomore',
+        academicYear: 'Year 2',
         monthlyAllowanceBaseline: 150000,
         monthlySavingsGoal: 20000,
         currency: 'PKR',
@@ -94,7 +96,7 @@ const seedDatabase = async () => {
         email: 'jane@campuscoin.com',
         passwordHash,
         role: 'student',
-        academicYear: 'Freshman',
+        academicYear: 'Year 1',
         monthlyAllowanceBaseline: 120000,
         monthlySavingsGoal: 10000,
       },
@@ -103,7 +105,7 @@ const seedDatabase = async () => {
         email: 'bob@campuscoin.com',
         passwordHash,
         role: 'student',
-        academicYear: 'Senior',
+        academicYear: 'Year 4',
         monthlyAllowanceBaseline: 200000,
         monthlySavingsGoal: 50000,
       }
@@ -112,29 +114,14 @@ const seedDatabase = async () => {
     const primaryStudent = students[0];
 
     // Seed all SRS default categories
-    const categoriesData = [
-      { name: 'Allowance', type: 'income', isDefault: true, icon: 'piggy-bank', color: '#4caf50' },
-      { name: 'Part-time Job', type: 'income', isDefault: true, icon: 'briefcase', color: '#8bc34a' },
-      { name: 'Scholarship', type: 'income', isDefault: true, icon: 'graduation-cap', color: '#cddc39' },
-      { name: 'Gift', type: 'income', isDefault: true, icon: 'gift', color: '#ffeb3b' },
-      { name: 'Other Income', type: 'income', isDefault: true, icon: 'wallet', color: '#ffc107' },
-      { name: 'Food', type: 'expense', isDefault: true, icon: 'utensils', color: '#ff9800' },
-      { name: 'Transport', type: 'expense', isDefault: true, icon: 'car', color: '#2196f3' },
-      { name: 'Hostel/Rent', type: 'expense', isDefault: true, icon: 'home', color: '#9c27b0' },
-      { name: 'Academics', type: 'expense', isDefault: true, icon: 'book-open', color: '#3f51b5' },
-      { name: 'Subscriptions', type: 'expense', isDefault: true, icon: 'smartphone', color: '#00bcd4' },
-      { name: 'Entertainment', type: 'expense', isDefault: true, icon: 'gamepad-2', color: '#e91e63' },
-      { name: 'Miscellaneous', type: 'expense', isDefault: true, icon: 'tag', color: '#607d8b' },
-    ];
-
-    const insertedCategories = await Category.insertMany(categoriesData);
+    const insertedCategories = await Category.insertMany(DEFAULT_CATEGORIES);
     
     const getCat = (name) => insertedCategories.find(c => c.name === name);
 
     // Create 6 Months of Transactions for primary student
     const transactions = [];
     const now = new Date();
-    const currentMonthStr = now.toISOString().slice(0, 7);
+    const currentMonthStr = toYearMonthLocal(now);
 
     for (let monthOffset = 0; monthOffset < 6; monthOffset++) {
       const monthDate = new Date(Date.UTC(now.getFullYear(), now.getMonth() - monthOffset, 15));

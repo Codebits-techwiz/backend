@@ -1,10 +1,38 @@
 import { Category } from '../models/Category.js';
 import { Transaction } from '../models/Transaction.js';
+import { DEFAULT_CATEGORIES } from '../config/defaultCategories.js';
 
 /**
  * Category Service
  * Business logic layer for categories management.
  */
+
+/**
+ * Ensure all built-in system categories exist (idempotent).
+ * Restores missing defaults without touching user custom categories.
+ */
+export const ensureDefaultCategories = async () => {
+  let created = 0;
+
+  for (const cat of DEFAULT_CATEGORIES) {
+    const existing = await Category.findOne({
+      name: new RegExp(`^${cat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+      type: cat.type,
+      isDefault: true
+    });
+
+    if (!existing) {
+      await Category.create({ ...cat, owner: null });
+      created += 1;
+    }
+  }
+
+  if (created > 0) {
+    console.log(`[Categories] Restored ${created} built-in default categor${created === 1 ? 'y' : 'ies'}.`);
+  }
+
+  return created;
+};
 
 /**
  * Fetch all available categories for a student (System Defaults + Student's Own Custom Categories)
@@ -62,7 +90,7 @@ export const updateCustomCategory = async (userId, categoryId, updateData) => {
 
   // Security check: Students cannot modify default categories or categories owned by others
   if (category.isDefault || (category.owner && category.owner.toString() !== userId)) {
-    const error = new Error('Permission denied. System default categories cannot be modified.');
+    const error = new Error('Built-in categories can’t be edited. You can create your own instead.');
     error.statusCode = 403;
     throw error;
   }
@@ -89,7 +117,7 @@ export const deleteCustomCategory = async (userId, categoryId, reassignCategoryI
   }
 
   if (category.isDefault || (category.owner && category.owner.toString() !== userId)) {
-    const error = new Error('Permission denied. System default categories cannot be deleted.');
+    const error = new Error('Built-in categories can’t be deleted.');
     error.statusCode = 403;
     throw error;
   }

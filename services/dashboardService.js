@@ -3,7 +3,7 @@ import { User } from '../models/User.js';
 import { Transaction } from '../models/Transaction.js';
 import { getBudgetsForMonth } from './budgetService.js';
 import { getSavingTipsForUser } from './tipsEngineService.js';
-import { toAmount } from '../utils/money.js';
+import { toAmount, toYearMonthLocal } from '../utils/money.js';
 
 /**
  * Dashboard Summary Service
@@ -17,9 +17,10 @@ export const getDashboardSummary = async (userId) => {
     throw error;
   }
 
-  const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const startOfMonth = new Date(`${currentMonthStr}-01T00:00:00.000Z`);
-  const endOfMonth = new Date(Date.UTC(startOfMonth.getUTCFullYear(), startOfMonth.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+  const now = new Date();
+  const currentMonthStr = toYearMonthLocal(now); // YYYY-MM (local calendar)
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
   const userObjectId = new mongoose.Types.ObjectId(userId);
 
@@ -102,7 +103,9 @@ export const getDashboardSummary = async (userId) => {
     user: {
       name: user.name,
       academicYear: user.academicYear,
-      currency: user.currency
+      currency: user.currency,
+      monthlyAllowanceBaseline: toAmount(user.monthlyAllowanceBaseline || 0),
+      monthlySavingsGoal: toAmount(user.monthlySavingsGoal || 0)
     },
     month: currentMonthStr,
     totals: {

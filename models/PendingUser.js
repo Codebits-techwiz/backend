@@ -26,7 +26,7 @@ const pendingUserSchema = new mongoose.Schema(
     },
     academicYear: {
       type: String,
-      default: '1st Year',
+      default: 'Year 1',
       trim: true
     },
     monthlyAllowanceBaseline: {

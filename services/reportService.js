@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Transaction } from '../models/Transaction.js';
-import { toAmount } from '../utils/money.js';
+import { toAmount, toYearMonthLocal } from '../utils/money.js';
 
 const userObjId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -91,8 +91,8 @@ export const getCategoryBreakdown = async (userId, filters = {}) => {
  */
 export const getTrend6Months = async (userId) => {
   const now = new Date();
-  // Calculate date 6 months ago (start of that month)
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+  // Start of month, 5 months ago (local calendar) — 6 months inclusive
+  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1, 0, 0, 0, 0);
 
   const trendAgg = await Transaction.aggregate([
     {
@@ -105,7 +105,14 @@ export const getTrend6Months = async (userId) => {
     {
       $group: {
         _id: {
-          yearMonth: { $dateToString: { format: '%Y-%m', date: '$date' } },
+          // Use local calendar month so PKT/UTC offset does not shift the bucket
+          yearMonth: {
+            $dateToString: {
+              format: '%Y-%m',
+              date: '$date',
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+            }
+          },
           type: '$type'
         },
         totalCents: { $sum: '$amount' }
@@ -114,11 +121,11 @@ export const getTrend6Months = async (userId) => {
     { $sort: { '_id.yearMonth': 1 } }
   ]);
 
-  // Generate array of 6 months
+  // Generate array of 6 months using local YYYY-MM (avoid toISOString UTC shift)
   const monthsMap = new Map();
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthStr = d.toISOString().slice(0, 7);
+    const monthStr = toYearMonthLocal(d);
     monthsMap.set(monthStr, { month: monthStr, income: 0, expense: 0, balance: 0 });
   }
 
@@ -236,7 +243,7 @@ export const getPeriodOverview = async (userId, filters = {}) => {
 
   let { dateFrom, dateTo } = resolveDateRange(filters);
   if (!dateFrom && !dateTo && !filters.month) {
-    const currentMonthStr = new Date().toISOString().slice(0, 7);
+    const currentMonthStr = toYearMonthLocal();
     ({ dateFrom, dateTo } = resolveDateRange({ month: currentMonthStr }));
   }
 
@@ -269,7 +276,7 @@ export const getPeriodOverview = async (userId, filters = {}) => {
 
   const periodLabel = filters.dateFrom || filters.dateTo
     ? `${filters.dateFrom || '…'} → ${filters.dateTo || '…'}`
-    : (filters.month || new Date().toISOString().slice(0, 7));
+    : (filters.month || toYearMonthLocal());
 
   return {
     month: periodLabel,

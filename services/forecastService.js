@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Transaction } from '../models/Transaction.js';
-import { toAmount } from '../utils/money.js';
+import { toAmount, toYearMonthLocal } from '../utils/money.js';
 
 const userObjId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -49,7 +49,7 @@ export const getNextMonthForecast = async (userId) => {
 
   // Next month string calculation
   const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const nextMonthStr = nextMonthDate.toISOString().slice(0, 7);
+  const nextMonthStr = toYearMonthLocal(nextMonthDate);
 
   const projectedExpense = toAmount(avgExpenseCents);
   const projectedIncome = toAmount(avgIncomeCents);

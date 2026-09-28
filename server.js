@@ -28,6 +28,8 @@ import activityRoutes from './routes/activityRoutes.js';
 import siteContentRoutes from './routes/siteContentRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import { initRecurringCronJob } from './jobs/recurringCron.js';
+import { ensureDefaultCategories } from './services/categoryService.js';
+import { migrateLegacyUserMoney } from './services/migrateLegacyMoney.js';
 
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
@@ -122,14 +124,28 @@ app.use('*', (req, res) => {
 app.use(errorHandler);
 
 // Connect Database & Start Server
-connectDB().then(() => {
-  if (process.env.NODE_ENV !== 'test') {
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(
-    `[Campus Coin API] Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
-  );
-});
+connectDB().then(async () => {
+  try {
+    await ensureDefaultCategories();
+  } catch (err) {
+    console.error('[Categories] Failed to ensure built-in defaults:', err.message);
+  }
 
+  try {
+    const fixed = await migrateLegacyUserMoney();
+    if (fixed > 0) {
+      console.log(`[Migrate] Fixed legacy allowance/savings cents for ${fixed} user(s).`);
+    }
+  } catch (err) {
+    console.error('[Migrate] Legacy money migration failed:', err.message);
+  }
+
+  if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `[Campus Coin API] Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
+      );
+    });
   }
 });
 

@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { sendResetPasswordEmail, sendRegistrationOtpEmail, sendLogin2FAOtpEmail } from './emailService.js';
 import { formatUserResponse } from './userService.js';
+import { toCents } from '../utils/money.js';
 
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 const generatePending2FAToken = (userId, email) =>
@@ -37,7 +38,7 @@ const issueLoginOtp = async (user) => {
 export const registerUser = async (data) => {
   const normalizedEmail = data.email.toLowerCase().trim();
   const exists = await User.findOne({ email: normalizedEmail });
-  if (exists) throw new Error('User already exists');
+  if (exists) throw new Error('An account with this email already exists. Try logging in instead.');
 
   const passwordHash = await hashPassword(data.password);
   
@@ -50,9 +51,9 @@ export const registerUser = async (data) => {
     email: normalizedEmail,
     name: data.name.trim(),
     passwordHash,
-    academicYear: data.academicYear || '1st Year',
-    monthlyAllowanceBaseline: Number(data.monthlyAllowance) || 0,
-    monthlySavingsGoal: Number(data.savingsGoal) || 0,
+    academicYear: (data.academicYear && String(data.academicYear).trim()) || 'Year 1',
+    monthlyAllowanceBaseline: toCents(Number(data.monthlyAllowance) || 0),
+    monthlySavingsGoal: toCents(Number(data.savingsGoal) || 0),
     currency: data.currency || 'PKR',
     otpCode
   });
@@ -115,9 +116,15 @@ export const resendRegistrationOtp = async (email) => {
 export const loginUser = async (email, password) => {
   const normalizedEmail = email.toLowerCase().trim();
   const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
-  if (!user || !(await comparePassword(password, user.passwordHash))) throw new Error('Invalid email or password');
-  if (user.role === 'admin') throw new Error('Invalid email or password'); // Reject admin accounts
-  if (!user.isActive) throw new Error('Invalid email or password'); // Generic — don't reveal disabled state
+  if (!user || !(await comparePassword(password, user.passwordHash))) {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
+  if (user.role === 'admin') {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
+  if (!user.isActive) {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
 
   if (user.twoFactorEnabled) {
     const pendingToken = await issueLoginOtp(user);
@@ -169,10 +176,17 @@ export const resendLoginOtp = async (email, pendingToken) => {
 };
 
 export const adminLoginUser = async (email, password) => {
-  const user = await User.findOne({ email }).select('+passwordHash');
-  if (!user || !(await comparePassword(password, user.passwordHash))) throw new Error('Invalid email or password');
-  if (user.role !== 'admin') throw new Error('Invalid email or password'); // Reject student accounts
-  if (!user.isActive) throw new Error('Invalid email or password'); // Generic — don't reveal disabled state
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await User.findOne({ email: normalizedEmail }).select('+passwordHash');
+  if (!user || !(await comparePassword(password, user.passwordHash))) {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
+  if (user.role !== 'admin') {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
+  if (!user.isActive) {
+    throw new Error('That email or password doesn’t look right. Please try again.');
+  }
   const token = generateToken(user._id);
   return { user: formatUserResponse(user), token };
 };
